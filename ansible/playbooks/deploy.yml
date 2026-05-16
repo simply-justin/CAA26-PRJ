@@ -1,17 +1,59 @@
-- name: Deploy network device configuration
-  hosts: automation_targets
+---
+- name: Validate configuration data before deployment
+  hosts: localhost
   gather_facts: false
-  become: true
 
   vars_files:
     - "../group_vars/all.yml"
     - "../group_vars/{{ target_environment | default('test') }}.yml"
 
   roles:
-    - role: spine_leaf
-    - role: fortigate
+    - role: validation
 
-- name: Deploy SDN and Kubernetes integrations
+
+- name: Deploy datacenter network configuration to Arista
+  hosts: arista
+  gather_facts: false
+  connection: httpapi
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  vars:
+    ansible_network_os: arista.eos.eos
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_user: "{{ lookup('env', 'ARISTA_API_USERNAME') }}"
+    ansible_password: "{{ lookup('env', 'ARISTA_API_PASSWORD') }}"
+
+  roles:
+    - role: spine_leaf
+      when: datacenter_network.enabled | default(true)
+
+
+- name: Deploy network security configuration to FortiGate
+  hosts: fortigate
+  gather_facts: false
+  connection: httpapi
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    fortigate_access_token: "{{ lookup('env', 'FORTIGATE_API_TOKEN') }}"
+    fortigate_vdom: "{{ network_security_stack.fortigate.vdom | default('root') }}"
+
+  roles:
+    - role: fortigate
+      when: network_security_stack.fortigate.enabled | default(true)
+
+
+- name: Provision SDN policies
   hosts: localhost
   gather_facts: false
 
@@ -21,4 +63,20 @@
 
   roles:
     - role: sdn_controller
+      when:
+        - iac_sdn.sdn_controller.enabled | default(false)
+        - lookup('env', 'SDN_CONTROLLER_URL') | length > 0
+        - lookup('env', 'SDN_CONTROLLER_TOKEN') | length > 0
+
+
+- name: Validate Kubernetes workload integration
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  roles:
     - role: kubernetes
+      when: iac_sdn.kubernetes.enabled | default(true)

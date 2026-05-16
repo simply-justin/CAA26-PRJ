@@ -1,6 +1,8 @@
 environment_name: test
 
 datacenter_network:
+  enabled: true
+
   topology:
     type: spine_leaf
     rules:
@@ -26,15 +28,19 @@ datacenter_network:
   vrfs:
     - name: vrf-app
       vni: 10010
+      description: Applicatie segment
 
     - name: vrf-database
       vni: 10020
+      description: Database segment
 
     - name: vrf-management
       vni: 10030
+      description: Management segment
 
     - name: vrf-kubernetes
       vni: 10040
+      description: Kubernetes workload segment
 
   vlans:
     - id: 10
@@ -84,15 +90,18 @@ datacenter_network:
         - 30
         - 40
 
+
 network_security_stack:
   zero_trust:
     enabled: true
     default_policy: deny
     explicit_allow_required: true
     restrict_lateral_movement: true
+    identity_based_access: true
 
   fortigate:
     enabled: true
+    vdom: root
     cluster_mode: active_passive
     vdoms_enabled: true
     identity_based_policies: true
@@ -102,43 +111,67 @@ network_security_stack:
     - name: app
       vlan_id: 10
       vrf: vrf-app
+      subnet: 10.10.10.0/24
+      interface: vlan10
 
     - name: database
       vlan_id: 20
       vrf: vrf-database
+      subnet: 10.10.20.0/24
+      interface: vlan20
 
     - name: management
       vlan_id: 30
       vrf: vrf-management
+      subnet: 10.10.30.0/24
+      interface: vlan30
 
     - name: kubernetes
       vlan_id: 40
       vrf: vrf-kubernetes
+      subnet: 10.10.40.0/24
+      interface: vlan40
+
+  firewall_services:
+    - name: TCP_5432
+      protocol: tcp
+      destination_port: 5432
 
   firewall_policies:
     - name: allow_app_to_database
       source_zone: app
       destination_zone: database
-      service: tcp/5432
+      source_address: ADDR_APP_NET
+      destination_address: ADDR_DATABASE_NET
+      service: TCP_5432
+      destination_port: 5432
       action: allow
+      log_traffic: true
 
     - name: deny_database_to_app
       source_zone: database
       destination_zone: app
-      service: any
+      source_address: ADDR_DATABASE_NET
+      destination_address: ADDR_APP_NET
+      service: ALL
       action: deny
+      log_traffic: true
 
     - name: allow_management_to_network_devices
       source_zone: management
       destination_zone: management
-      service: tcp/22,tcp/443
+      source_address: ADDR_MANAGEMENT_NET
+      destination_address: ADDR_MANAGEMENT_NET
+      service: SSH
       action: allow
+      log_traffic: true
 
   cilium:
     enabled: true
     default_policy: deny
     policy_mode: label_based
     enforcement_scope: kubernetes_workloads
+
 
 iac_sdn:
   source_control:
@@ -156,7 +189,7 @@ iac_sdn:
 
   ansible:
     enabled: true
-    execution_method: ssh
+    execution_method: api
     idempotent_playbooks: true
     check_mode_supported: true
 
@@ -166,7 +199,7 @@ iac_sdn:
     validate_before_deploy: true
 
   sdn_controller:
-    enabled: true
+    enabled: false
     provisioning_method: api
     policies_as_code: true
 
@@ -189,6 +222,9 @@ iac_sdn:
     cni: cilium
     namespace_policy_mapping: true
     workload_label_mapping: true
+    manifest_path: kubernetes/
+    apply_mode: dry_run
+
 
 monitoring_logging:
   librenms:
@@ -202,6 +238,7 @@ monitoring_logging:
     config_archiving: true
     git_backend: true
     remove_secret_for_fortigate: true
+
 
 authentication_authorization:
   identity_source: active_directory

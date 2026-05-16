@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Network Automation
 
 on:
   push:
@@ -14,33 +14,148 @@ on:
         type: choice
         options:
           - test
+          - acceptance
+          - production
 
 jobs:
-  deploy:
-    name: Deploy network automation
+  validate:
+    name: Validate configuration
     runs-on: ubuntu-latest
 
-    environment:
-      name: ${{ github.event.inputs.environment || 'test' }}
+    env:
+      TARGET_ENV: ${{ github.event.inputs.environment || 'test' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install OpenVPN, Ansible and kubectl
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openvpn iproute2 iputils-ping docker.io
+          sudo apt-get install -y docker.io
+
+      - name: Install Python dependencies
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Run YAML lint
+        run: |
+          yamllint ansible/ .github/workflows/ kubernetes/ sdn/ batfish/
+
+      - name: Run Ansible lint
+        run: |
+          ansible-lint ansible/playbooks/ ansible/roles/
+
+      - name: Run Ansible syntax check
+        run: |
+          ansible-playbook ansible/playbooks/validate.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
+            --syntax-check
+
+          ansible-playbook ansible/playbooks/deploy.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
+            --syntax-check
+
+          ansible-playbook ansible/playbooks/verify.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
+            --syntax-check
+
+      - name: Run Ansible data validation
+        run: |
+          ansible-playbook ansible/playbooks/validate.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
+
+  batfish:
+    name: Validate network with Batfish
+    runs-on: ubuntu-latest
+    needs:
+      - validate
+
+    env:
+      TARGET_ENV: ${{ github.event.inputs.environment || 'test' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start Batfish container
+        run: |
+          docker run -d \
+            --name batfish \
+            -p 9997:9997 \
+            -p 9996:9996 \
+            batfish/allinone
+
+          sleep 30
+
+      - name: Install Batfish dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybatfish pandas
+
+      - name: Run Batfish validation
+        run: |
+          python batfish/validate.py
+
+
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'test' }}
+    runs-on: ubuntu-latest
+    needs:
+      - validate
+      - batfish
+
+    environment:
+      name: ${{ github.event.inputs.environment || 'test' }}
+
+    env:
+      TARGET_ENV: ${{ github.event.inputs.environment || 'test' }}
+
+      ARISTA_API_USERNAME: ${{ secrets.ARISTA_API_USERNAME }}
+      ARISTA_API_PASSWORD: ${{ secrets.ARISTA_API_PASSWORD }}
+      FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
+
+      SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
+      SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn iproute2 iputils-ping curl
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Install kubectl
+        run: |
           curl -LO "https://dl.k8s.io/release/stable.txt"
           KUBECTL_VERSION=$(cat stable.txt)
+
           curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/kubectl
 
-      - name: Write VPN config
+      - name: Write VPN configuration
         run: |
           cat > vpn.ovpn <<'EOF'
           ${{ secrets.VPN_CONFIG }}
@@ -63,68 +178,62 @@ jobs:
 
           sleep 20
 
-      - name: Prepare SSH key
+      - name: Show VPN routes
         run: |
-          mkdir -p ~/.ssh
+          ip route
 
-          cat > ~/.ssh/id_rsa <<'EOF'
-          ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+      - name: Test Arista API reachability
+        if: ${{ secrets.ARISTA_LEAF01_HOST != '' }}
+        run: |
+          ping -c 3 "${{ secrets.ARISTA_LEAF01_HOST }}" || true
+
+      - name: Test FortiGate API reachability
+        if: ${{ secrets.FORTIGATE_HOST != '' }}
+        run: |
+          ping -c 3 "${{ secrets.FORTIGATE_HOST }}" || true
+
+      - name: Prepare kubeconfig
+        if: ${{ secrets.KUBECONFIG != '' }}
+        run: |
+          mkdir -p ~/.kube
+
+          cat > ~/.kube/config <<'EOF'
+          ${{ secrets.KUBECONFIG }}
           EOF
 
-          chmod 600 ~/.ssh/id_rsa
+          chmod 600 ~/.kube/config
 
-      - name: Add target host to known_hosts
+      - name: Run deployment dry-run
         run: |
-          ssh-keyscan -H "${{ secrets.ANSIBLE_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Test VPN reachability
-        run: |
-          ping -c 3 "${{ secrets.ANSIBLE_HOST }}"
-
-      - name: Test SSH connection
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-        run: |
-          ssh "$ANSIBLE_USER@$ANSIBLE_HOST" "hostname && whoami"
-
-      - name: Run dry-run
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
-          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
-        run: |
-          TARGET_ENV="${{ github.event.inputs.environment || 'test' }}"
-
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
             --check \
             --diff
+        env:
+          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
+          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
       - name: Deploy configuration
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
-          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment || 'test' }}"
-
           ansible-playbook ansible/playbooks/deploy.yml \
-            -i "ansible/inventories/${TARGET_ENV}/hosts.yml"
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+        env:
+          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
+          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
       - name: Verify deployment
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment || 'test' }}"
-
           ansible-playbook ansible/playbooks/verify.yml \
-            -i "ansible/inventories/${TARGET_ENV}/hosts.yml"
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+        env:
+          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
+          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
       - name: Cleanup temporary files
         if: always()
         run: |
-          rm -f vpn.ovpn vpn-auth.txt ~/.ssh/id_rsa
+          rm -f vpn.ovpn vpn-auth.txt
+          rm -f ~/.kube/config
