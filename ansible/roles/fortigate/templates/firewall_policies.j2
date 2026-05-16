@@ -1,0 +1,7 @@
+{% for policy in firewall_policies %}
+policy {{ policy.name }}
+  source {{ policy.source_segment }}
+  destination {{ policy.destination_segment }}
+  service {{ policy.service }}
+  action {{ policy.action }}
+{% endfor %}

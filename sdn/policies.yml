@@ -1,0 +1,13 @@
+policies:
+  - name: app-segment-policy
+    namespace: app
+    workload_label: frontend
+    segment: app
+    allowed_destinations:
+      - database
+
+  - name: database-segment-policy
+    namespace: database
+    workload_label: database
+    segment: database
+    allowed_destinations: []

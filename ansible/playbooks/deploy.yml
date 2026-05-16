@@ -1,0 +1,24 @@
+- name: Deploy network device configuration
+  hosts: automation_targets
+  gather_facts: false
+  become: true
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  roles:
+    - role: spine_leaf
+    - role: fortigate
+
+- name: Deploy SDN and Kubernetes integrations
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  roles:
+    - role: sdn_controller
+    - role: kubernetes

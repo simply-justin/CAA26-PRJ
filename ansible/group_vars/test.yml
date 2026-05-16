@@ -1,0 +1,221 @@
+environment_name: test
+
+datacenter_network:
+  topology:
+    type: spine_leaf
+    rules:
+      leafs_connect_to_all_spines: true
+      spines_connect_to_all_leafs: true
+      leaf_to_leaf_connections_allowed: false
+      spine_to_spine_connections_allowed: false
+      endpoints_only_on_leafs: true
+
+  evpn_vxlan:
+    enabled: true
+    control_plane: evpn
+    overlay_protocol: vxlan
+    hardware_offloading_required: true
+
+  routing:
+    backbone_protocol: l3_ecmp
+    spanning_tree_on_backbone: false
+    underlay_protocol: ospf
+    overlay_protocol: bgp_evpn
+    asn: 65100
+
+  vrfs:
+    - name: vrf-app
+      vni: 10010
+
+    - name: vrf-database
+      vni: 10020
+
+    - name: vrf-management
+      vni: 10030
+
+    - name: vrf-kubernetes
+      vni: 10040
+
+  vlans:
+    - id: 10
+      name: app
+      subnet: 10.10.10.0/24
+      vrf: vrf-app
+      vni: 10010
+
+    - id: 20
+      name: database
+      subnet: 10.10.20.0/24
+      vrf: vrf-database
+      vni: 10020
+
+    - id: 30
+      name: management
+      subnet: 10.10.30.0/24
+      vrf: vrf-management
+      vni: 10030
+
+    - id: 40
+      name: kubernetes
+      subnet: 10.10.40.0/24
+      vrf: vrf-kubernetes
+      vni: 10040
+
+  interfaces:
+    - device: leaf01
+      name: Ethernet1
+      description: Kubernetes node 01
+      mode: trunk
+      native_vlan: 40
+      allowed_vlans:
+        - 10
+        - 20
+        - 30
+        - 40
+
+    - device: leaf02
+      name: Ethernet1
+      description: Kubernetes node 02
+      mode: trunk
+      native_vlan: 40
+      allowed_vlans:
+        - 10
+        - 20
+        - 30
+        - 40
+
+network_security_stack:
+  zero_trust:
+    enabled: true
+    default_policy: deny
+    explicit_allow_required: true
+    restrict_lateral_movement: true
+
+  fortigate:
+    enabled: true
+    cluster_mode: active_passive
+    vdoms_enabled: true
+    identity_based_policies: true
+    logging_enabled: true
+
+  zones:
+    - name: app
+      vlan_id: 10
+      vrf: vrf-app
+
+    - name: database
+      vlan_id: 20
+      vrf: vrf-database
+
+    - name: management
+      vlan_id: 30
+      vrf: vrf-management
+
+    - name: kubernetes
+      vlan_id: 40
+      vrf: vrf-kubernetes
+
+  firewall_policies:
+    - name: allow_app_to_database
+      source_zone: app
+      destination_zone: database
+      service: tcp/5432
+      action: allow
+
+    - name: deny_database_to_app
+      source_zone: database
+      destination_zone: app
+      service: any
+      action: deny
+
+    - name: allow_management_to_network_devices
+      source_zone: management
+      destination_zone: management
+      service: tcp/22,tcp/443
+      action: allow
+
+  cilium:
+    enabled: true
+    default_policy: deny
+    policy_mode: label_based
+    enforcement_scope: kubernetes_workloads
+
+iac_sdn:
+  source_control:
+    platform: github
+    target_platform: gitlab
+    pull_requests_required: true
+    protected_main_branch: true
+
+  ci_cd:
+    platform: github_actions
+    target_platform: gitlab_ci_cd
+    validate_before_deploy: true
+    dry_run_before_deploy: true
+    manual_approval_for_production: true
+
+  ansible:
+    enabled: true
+    execution_method: ssh
+    idempotent_playbooks: true
+    check_mode_supported: true
+
+  batfish:
+    enabled: true
+    snapshot_environment: test
+    validate_before_deploy: true
+
+  sdn_controller:
+    enabled: true
+    provisioning_method: api
+    policies_as_code: true
+
+  sdn_policies:
+    - name: app-segment-policy
+      namespace: app
+      workload_label: frontend
+      segment: app
+      allowed_destinations:
+        - database
+
+    - name: database-segment-policy
+      namespace: database
+      workload_label: database
+      segment: database
+      allowed_destinations: []
+
+  kubernetes:
+    enabled: true
+    cni: cilium
+    namespace_policy_mapping: true
+    workload_label_mapping: true
+
+monitoring_logging:
+  librenms:
+    enabled: true
+    protocol: snmp
+    purpose: network_monitoring
+
+  oxidized:
+    enabled: true
+    protocol: ssh
+    config_archiving: true
+    git_backend: true
+    remove_secret_for_fortigate: true
+
+authentication_authorization:
+  identity_source: active_directory
+
+  entra_id:
+    enabled: true
+    mfa_enabled: true
+
+  nps_radius:
+    enabled: true
+    authentication_protocol: eap_tls
+    dynamic_vlan_assignment: true
+
+  admin_access:
+    sdn_admin_group: GS-UORS-SDN-Admins
+    mfa_required: true
+    management_segment: management

@@ -1,0 +1,21 @@
+- name: Write SDN policies to local file for provisioning
+  ansible.builtin.copy:
+    dest: sdn/policies.yml
+    mode: "0644"
+    content: |
+      policies:
+      {% for policy in iac_sdn.sdn_policies %}
+        - name: {{ policy.name }}
+          namespace: {{ policy.namespace }}
+          workload_label: {{ policy.workload_label }}
+          segment: {{ policy.segment }}
+          allowed_destinations:
+      {% for destination in policy.allowed_destinations %}
+            - {{ destination }}
+      {% endfor %}
+      {% endfor %}
+
+- name: Provision SDN policies through API
+  ansible.builtin.command:
+    cmd: python sdn/provision.py
+  changed_when: true

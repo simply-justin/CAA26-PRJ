@@ -1,0 +1,177 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "test"
+        type: choice
+        options:
+          - test
+
+      ref:
+        description: "Git ref to rollback to, for example stable-test-v1 or a commit SHA"
+        required: true
+        type: string
+
+      reason:
+        description: "Reason for rollback"
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    name: Rollback network automation
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout selected rollback ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: Show rollback information
+        run: |
+          echo "Rollback environment: ${{ github.event.inputs.environment }}"
+          echo "Rollback ref: ${{ github.event.inputs.ref }}"
+          echo "Rollback reason: ${{ github.event.inputs.reason }}"
+          git rev-parse HEAD
+          git log -1 --oneline
+
+      - name: Install OpenVPN, Ansible and kubectl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn iproute2 iputils-ping docker.io
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+          curl -LO "https://dl.k8s.io/release/stable.txt"
+          KUBECTL_VERSION=$(cat stable.txt)
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Run YAML lint
+        run: |
+          yamllint ansible/ .github/workflows/ sdn/ kubernetes/
+
+      - name: Run Ansible syntax check
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+
+          ansible-playbook ansible/playbooks/validate.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            --syntax-check
+
+          ansible-playbook ansible/playbooks/deploy.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            --syntax-check
+
+          ansible-playbook ansible/playbooks/verify.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            --syntax-check
+
+      - name: Run Ansible data validation
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+
+          ansible-playbook ansible/playbooks/validate.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
+      - name: Write VPN config
+        run: |
+          cat > vpn.ovpn <<'EOF'
+          ${{ secrets.VPN_CONFIG }}
+          EOF
+
+          cat > vpn-auth.txt <<'EOF'
+          ${{ secrets.VPN_USERNAME }}
+          ${{ secrets.VPN_PASSWORD }}
+          EOF
+
+          chmod 600 vpn.ovpn vpn-auth.txt
+
+      - name: Connect to VPN
+        run: |
+          sudo openvpn \
+            --config vpn.ovpn \
+            --auth-user-pass vpn-auth.txt \
+            --daemon \
+            --log vpn.log
+
+          sleep 20
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+
+          cat > ~/.ssh/id_rsa <<'EOF'
+          ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          EOF
+
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Add target host to known_hosts
+        run: |
+          ssh-keyscan -H "${{ secrets.ANSIBLE_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Test VPN reachability
+        run: |
+          ping -c 3 "${{ secrets.ANSIBLE_HOST }}"
+
+      - name: Test SSH connection
+        env:
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
+        run: |
+          ssh "$ANSIBLE_USER@$ANSIBLE_HOST" "hostname && whoami"
+
+      - name: Rollback dry-run
+        env:
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
+          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
+          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+
+          ansible-playbook ansible/playbooks/deploy.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
+            --check \
+            --diff
+
+      - name: Apply rollback configuration
+        env:
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
+          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
+          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+
+          ansible-playbook ansible/playbooks/deploy.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
+      - name: Verify rollback
+        env:
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
+        run: |
+          TARGET_ENV="${{ github.event.inputs.environment }}"
+
+          ansible-playbook ansible/playbooks/verify.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          rm -f vpn.ovpn vpn-auth.txt ~/.ssh/id_rsa

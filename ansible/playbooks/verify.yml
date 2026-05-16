@@ -1,0 +1,41 @@
+- name: Verify network automation deployment
+  hosts: automation_targets
+  gather_facts: false
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  tasks:
+    - name: Check spine-leaf VLAN configuration
+      ansible.builtin.stat:
+        path: "{{ configuration_root }}/spine-leaf/vlans.cfg"
+      register: spine_leaf_config
+
+    - name: Validate spine-leaf VLAN configuration exists
+      ansible.builtin.assert:
+        that:
+          - spine_leaf_config.stat.exists
+        fail_msg: "Spine-leaf VLAN configuration file is missing"
+
+    - name: Check FortiGate address objects
+      ansible.builtin.stat:
+        path: "{{ configuration_root }}/fortigate/address-objects.cfg"
+      register: fortigate_address_objects
+
+    - name: Validate FortiGate address objects exist
+      ansible.builtin.assert:
+        that:
+          - fortigate_address_objects.stat.exists
+        fail_msg: "FortiGate address objects file is missing"
+
+    - name: Check FortiGate firewall policies
+      ansible.builtin.stat:
+        path: "{{ configuration_root }}/fortigate/firewall-policies.cfg"
+      register: fortigate_firewall_policies
+
+    - name: Validate FortiGate firewall policies exist
+      ansible.builtin.assert:
+        that:
+          - fortigate_firewall_policies.stat.exists
+        fail_msg: "FortiGate firewall policies file is missing"

@@ -1,0 +1,6 @@
+ansible
+ansible-lint
+yamllint
+pybatfish
+requests
+pyyaml

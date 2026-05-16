@@ -1,0 +1,12 @@
+.env
+*.key
+*.pem
+*.crt
+*.ovpn
+vpn.ovpn
+vpn-auth.txt
+kubeconfig
+*.retry
+__pycache__/
+.pytest_cache/
+.ansible/

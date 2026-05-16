@@ -1,0 +1,10 @@
+- name: Validate network automation data
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  roles:
+    - role: validation

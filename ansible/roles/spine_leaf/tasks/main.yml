@@ -1,0 +1,50 @@
+- name: Create datacenter network configuration directory
+  ansible.builtin.file:
+    path: "{{ configuration_root }}/datacenter-network"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+
+- name: Render VLAN configuration
+  ansible.builtin.copy:
+    dest: "{{ configuration_root }}/datacenter-network/vlans.cfg"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: |
+      {% for vlan in datacenter_network.vlans %}
+      vlan {{ vlan.id }}
+        name {{ vlan.name }}
+        vrf {{ vlan.vrf }}
+        vni {{ vlan.vni }}
+      {% endfor %}
+
+- name: Render interface trunk configuration
+  ansible.builtin.copy:
+    dest: "{{ configuration_root }}/datacenter-network/interfaces.cfg"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: |
+      {% for interface in datacenter_network.interfaces %}
+      interface {{ interface.name }}
+        description {{ interface.description }}
+        switchport mode {{ interface.mode }}
+        switchport trunk native vlan {{ interface.native_vlan }}
+        switchport trunk allowed vlan {{ interface.allowed_vlans | join(',') }}
+      {% endfor %}
+
+- name: Render routing configuration
+  ansible.builtin.copy:
+    dest: "{{ configuration_root }}/datacenter-network/routing.cfg"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: |
+      routing
+        backbone_protocol {{ datacenter_network.routing.backbone_protocol }}
+        spanning_tree_on_backbone {{ datacenter_network.routing.spanning_tree_on_backbone }}
+        underlay_protocol {{ datacenter_network.routing.underlay_protocol }}
+        overlay_protocol {{ datacenter_network.routing.overlay_protocol }}
+        asn {{ datacenter_network.routing.asn }}

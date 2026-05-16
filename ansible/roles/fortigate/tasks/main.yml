@@ -1,0 +1,37 @@
+- name: Create network security configuration directory
+  ansible.builtin.file:
+    path: "{{ configuration_root }}/network-security-stack"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+
+- name: Render FortiGate zone configuration
+  ansible.builtin.copy:
+    dest: "{{ configuration_root }}/network-security-stack/zones.cfg"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: |
+      {% for zone in network_security_stack.zones %}
+      zone {{ zone.name }}
+        vlan {{ zone.vlan_id }}
+        vrf {{ zone.vrf }}
+      {% endfor %}
+
+- name: Render FortiGate firewall policies
+  ansible.builtin.copy:
+    dest: "{{ configuration_root }}/network-security-stack/firewall-policies.cfg"
+    owner: ansible
+    group: ansible
+    mode: "0644"
+    content: |
+      default_policy {{ network_security_stack.zero_trust.default_policy }}
+
+      {% for policy in network_security_stack.firewall_policies %}
+      policy {{ policy.name }}
+        source {{ policy.source_zone }}
+        destination {{ policy.destination_zone }}
+        service {{ policy.service }}
+        action {{ policy.action }}
+      {% endfor %}

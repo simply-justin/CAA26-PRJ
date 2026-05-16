@@ -1,0 +1,3 @@
+managed_by: ansible
+source_of_truth: git
+configuration_root: /opt/network-automation

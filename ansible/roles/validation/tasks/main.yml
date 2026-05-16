@@ -1,0 +1,39 @@
+- name: Validate VLAN IDs are unique
+  ansible.builtin.assert:
+    that:
+      - datacenter_network.vlans | map(attribute='id') | list | unique | length == datacenter_network.vlans | length
+    fail_msg: "Duplicate VLAN IDs detected"
+
+- name: Validate VLAN names are unique
+  ansible.builtin.assert:
+    that:
+      - datacenter_network.vlans | map(attribute='name') | list | unique | length == datacenter_network.vlans | length
+    fail_msg: "Duplicate VLAN names detected"
+
+- name: Validate all VLANs reference existing VRFs
+  ansible.builtin.assert:
+    that:
+      - item.vrf in datacenter_network.vrfs | map(attribute='name') | list
+    fail_msg: "VLAN references an unknown VRF"
+  loop: "{{ datacenter_network.vlans }}"
+
+- name: Validate firewall policy source zones exist
+  ansible.builtin.assert:
+    that:
+      - item.source_zone in network_security_stack.zones | map(attribute='name') | list
+    fail_msg: "Firewall policy references unknown source zone"
+  loop: "{{ network_security_stack.firewall_policies }}"
+
+- name: Validate firewall policy destination zones exist
+  ansible.builtin.assert:
+    that:
+      - item.destination_zone in network_security_stack.zones | map(attribute='name') | list
+    fail_msg: "Firewall policy references unknown destination zone"
+  loop: "{{ network_security_stack.firewall_policies }}"
+
+- name: Validate SDN policies reference existing security zones
+  ansible.builtin.assert:
+    that:
+      - item.segment in network_security_stack.zones | map(attribute='name') | list
+    fail_msg: "SDN policy references unknown segment"
+  loop: "{{ iac_sdn.sdn_policies }}"
