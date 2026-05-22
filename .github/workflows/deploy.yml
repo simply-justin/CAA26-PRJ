@@ -344,6 +344,25 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stop after preview for non-production
+        if: env.TARGET_ENV != 'production'
+        run: |
+          echo "Environment ${TARGET_ENV} is preview-only. Configuration apply is only allowed for production."
+
+      - name: Deploy configuration
+        if: env.TARGET_ENV == 'production'
+        run: |
+          ansible-playbook ansible/playbooks/deploy.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
+      - name: Verify deployment
+        if: env.TARGET_ENV == 'production'
+        run: |
+          ansible-playbook ansible/playbooks/verify.yml \
+            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}"
+
       - name: Cleanup VPN
         if: always()
         run: |
