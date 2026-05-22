@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Activate runner Python environment
         run: |
@@ -99,7 +99,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Start Batfish container
         run: |
@@ -153,7 +153,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |
@@ -184,17 +184,47 @@ jobs:
           ${{ secrets.VPN_PASSWORD }}
           EOF
 
+          if [ ! -s vpn.ovpn ]; then
+            echo "::error::VPN_PROFILE secret is empty"
+            exit 1
+          fi
+
+          if [ "$(sed -n '1p' vpn-auth.txt | wc -c)" -le 1 ] || [ "$(sed -n '2p' vpn-auth.txt | wc -c)" -le 1 ]; then
+            echo "::error::VPN_USERNAME or VPN_PASSWORD secret is empty"
+            exit 1
+          fi
+
           chmod 600 vpn.ovpn vpn-auth.txt
 
       - name: Connect to VPN
         run: |
+          print_vpn_log() {
+            if [ -f vpn.log ]; then
+              echo "::group::OpenVPN log"
+              sudo sed -n '1,200p' vpn.log
+              echo "::endgroup::"
+            fi
+          }
+
           sudo openvpn \
             --config vpn.ovpn \
             --auth-user-pass vpn-auth.txt \
             --daemon \
-            --log vpn.log
+            --log vpn.log \
+            --writepid openvpn.pid || {
+              echo "::error::OpenVPN failed to start"
+              print_vpn_log
+              exit 1
+            }
 
           sleep 20
+
+          VPN_PID="$(sudo sed -n '1p' openvpn.pid 2>/dev/null || true)"
+          if [ -z "$VPN_PID" ] || ! sudo kill -0 "$VPN_PID" 2>/dev/null; then
+            echo "::error::OpenVPN stopped during startup"
+            print_vpn_log
+            exit 1
+          fi
 
       - name: Show VPN routes
         run: |
@@ -234,4 +264,4 @@ jobs:
         if: always()
         run: |
           sudo pkill openvpn || true
-          rm -f vpn.ovpn vpn-auth.txt vpn.log
+          rm -f vpn.ovpn vpn-auth.txt vpn.log openvpn.pid
