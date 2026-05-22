@@ -32,6 +32,10 @@ variabelen met `lookup('env', ...)`.
 - `ARISTA_API_USERNAME = admin`
 - `ARISTA_API_PASSWORD` – wachtwoord uitsluitend als GitHub Secret, niet
   in Git.
+- `ARISTA_API_USERNAME` en `ARISTA_API_PASSWORD` moeten geldig zijn voor
+  Arista eAPI (`https://<leaf>:443/command-api`). Een HTTP 401 in de
+  deployment preview betekent dat deze credentials niet kloppen voor de
+  gekozen GitHub Environment of geen eAPI-toegang hebben.
 - `FORTIGATE_HOST` en `FORTIGATE_API_TOKEN` – uitsluitend als GitHub
   Secret, niet in Git.
 - `SUDO_PASSWORD` – sudo-wachtwoord van de runner user, uitsluitend als

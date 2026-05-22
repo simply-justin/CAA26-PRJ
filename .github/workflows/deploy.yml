@@ -290,6 +290,42 @@ jobs:
             exit 1
           fi
 
+      - name: Test Arista eAPI credentials
+        run: |
+          failures=0
+
+          test_eapi() {
+            name="$1"
+            host="$2"
+
+            echo "Checking $name eAPI credentials"
+
+            status="$(curl --insecure --silent --show-error \
+              --connect-timeout 10 \
+              --max-time 15 \
+              --user "${ARISTA_API_USERNAME}:${ARISTA_API_PASSWORD}" \
+              --header "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","method":"runCmds","params":{"version":1,"cmds":["show version"],"format":"json"},"id":"deploy-preview-auth-check"}' \
+              --output /tmp/eapi-response.json \
+              --write-out "%{http_code}" \
+              "https://${host}:443/command-api" || true)"
+
+            if [ "$status" != "200" ]; then
+              echo "::error::$name eAPI authentication failed with HTTP status ${status}. Check ARISTA_API_USERNAME and ARISTA_API_PASSWORD for environment ${TARGET_ENV}."
+              failures=1
+            fi
+          }
+
+          test_eapi "SLEAF01" "$ARISTA_SLEAF01_HOST"
+          test_eapi "SLEAF02" "$ARISTA_SLEAF02_HOST"
+          test_eapi "SLEAF03" "$ARISTA_SLEAF03_HOST"
+
+          rm -f /tmp/eapi-response.json
+
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Create deployment change preview
         id: deployment_preview
         run: |
@@ -332,13 +368,13 @@ jobs:
             echo
             echo "Ansible preview exit code: \`${{ steps.deployment_preview.outputs.exit_code }}\`"
             echo
-            echo "Download the full text file from the workflow artifact:"
+            echo "The full preview output is available as a workflow artifact:"
             echo "\`${TARGET_ENV}-deployment-preview\`"
             echo
             echo "<details><summary>Preview output</summary>"
             echo
             echo '```text'
-            sed -n '1,300p' "$PREVIEW_FILE"
+            sed -E 's/[[:space:]]+\*+$//; s/^\*+$//' "$PREVIEW_FILE" | sed -n '1,300p'
             echo '```'
             echo
             echo "</details>"
