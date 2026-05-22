@@ -41,6 +41,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Activate runner Python environment
+        run: |
+          echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
+
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -109,6 +113,10 @@ jobs:
 
           sleep 30
 
+      - name: Activate runner Python environment
+        run: |
+          echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
+          
       - name: Install Batfish dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -152,14 +160,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y openvpn iproute2 iputils-ping curl
 
+      - name: Activate runner Python environment
+        run: |
+          echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
+
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
-
-      - name: Activate runner Python environment
-        run: |
-          echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
 
       - name: Install Ansible collections
         run: |
