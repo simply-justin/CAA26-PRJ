@@ -36,7 +36,6 @@ jobs:
 
       FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
       FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
-      SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
     steps:
       - name: Checkout repository
@@ -151,6 +150,7 @@ jobs:
 
       FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
       FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
+      SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
     steps:
       - name: Checkout repository
