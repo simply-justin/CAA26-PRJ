@@ -135,7 +135,7 @@ jobs:
           profile = Path("vpn.ovpn")
           text = profile.read_text()
 
-          if "\\n" in text and "\n" not in text.replace("\\n", ""):
+          if "\\n" in text and text.count("\n") <= 1:
               profile.write_text(text.replace("\\n", "\n"))
           PY
 
