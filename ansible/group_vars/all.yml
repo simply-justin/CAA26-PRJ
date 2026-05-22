@@ -1,3 +1,11 @@
+---
 managed_by: ansible
-source_of_truth: git
-configuration_root: /opt/network-automation
+source_of_truth: github
+
+platform:
+  source_control: github
+  ci_cd: github_actions
+  runner: RUNNER01
+  runner_type: self_hosted
+  deployment_mode: direct_device_api
+  connectivity: openvpn

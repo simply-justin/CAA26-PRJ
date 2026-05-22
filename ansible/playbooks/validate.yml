@@ -1,4 +1,5 @@
-- name: Validate network automation data
+---
+- name: Validate network automation configuration
   hosts: localhost
   gather_facts: false
 

@@ -1,4 +1,5 @@
-name: Rollback
+---
+name: Rollback Network Automation
 
 on:
   workflow_dispatch:
@@ -10,9 +11,11 @@ on:
         type: choice
         options:
           - test
+          - acceptance
+          - production
 
       ref:
-        description: "Git ref to rollback to, for example stable-test-v1 or a commit SHA"
+        description: "Git ref to rollback to, for example stable-production-v1 or a commit SHA"
         required: true
         type: string
 
@@ -23,11 +26,25 @@ on:
 
 jobs:
   rollback:
-    name: Rollback network automation
-    runs-on: ubuntu-latest
+    name: Rollback ${{ github.event.inputs.environment }}
+    runs-on:
+      - self-hosted
+      - network-runner
 
     environment:
       name: ${{ github.event.inputs.environment }}
+
+    env:
+      TARGET_ENV: ${{ github.event.inputs.environment }}
+
+      ARISTA_API_USERNAME: ${{ secrets.ARISTA_API_USERNAME }}
+      ARISTA_API_PASSWORD: ${{ secrets.ARISTA_API_PASSWORD }}
+      ARISTA_SLEAF01_HOST: ${{ secrets.ARISTA_SLEAF01_HOST }}
+      ARISTA_SLEAF02_HOST: ${{ secrets.ARISTA_SLEAF02_HOST }}
+      ARISTA_SLEAF03_HOST: ${{ secrets.ARISTA_SLEAF03_HOST }}
+
+      FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
+      FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
 
     steps:
       - name: Checkout selected rollback ref
@@ -43,51 +60,47 @@ jobs:
           git rev-parse HEAD
           git log -1 --oneline
 
-      - name: Install OpenVPN, Ansible and kubectl
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openvpn iproute2 iputils-ping docker.io
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          sudo apt-get install -y openvpn iproute2 iputils-ping curl
 
-          curl -LO "https://dl.k8s.io/release/stable.txt"
-          KUBECTL_VERSION=$(cat stable.txt)
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
-
-      - name: Run YAML lint
+      - name: Install Python dependencies
         run: |
-          yamllint ansible/ .github/workflows/ sdn/ kubernetes/
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Run Ansible syntax check
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment }}"
-
           ansible-playbook ansible/playbooks/validate.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
             --syntax-check
 
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
             --syntax-check
 
           ansible-playbook ansible/playbooks/verify.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
+            -e "target_environment=${TARGET_ENV}" \
             --syntax-check
 
       - name: Run Ansible data validation
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment }}"
-
           ansible-playbook ansible/playbooks/validate.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
 
-      - name: Write VPN config
+      - name: Write VPN configuration
         run: |
           cat > vpn.ovpn <<'EOF'
-          ${{ secrets.VPN_CONFIG }}
+          ${{ secrets.VPN_PROFILE }}
           EOF
 
           cat > vpn-auth.txt <<'EOF'
@@ -107,40 +120,12 @@ jobs:
 
           sleep 20
 
-      - name: Prepare SSH key
+      - name: Show VPN routes
         run: |
-          mkdir -p ~/.ssh
-
-          cat > ~/.ssh/id_rsa <<'EOF'
-          ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
-          EOF
-
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Add target host to known_hosts
-        run: |
-          ssh-keyscan -H "${{ secrets.ANSIBLE_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Test VPN reachability
-        run: |
-          ping -c 3 "${{ secrets.ANSIBLE_HOST }}"
-
-      - name: Test SSH connection
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-        run: |
-          ssh "$ANSIBLE_USER@$ANSIBLE_HOST" "hostname && whoami"
+          ip route
 
       - name: Rollback dry-run
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
-          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment }}"
-
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}" \
@@ -148,30 +133,19 @@ jobs:
             --diff
 
       - name: Apply rollback configuration
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
-          SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
-          SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment }}"
-
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
 
       - name: Verify rollback
-        env:
-          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
-          ANSIBLE_HOST: ${{ secrets.ANSIBLE_HOST }}
         run: |
-          TARGET_ENV="${{ github.event.inputs.environment }}"
-
           ansible-playbook ansible/playbooks/verify.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
 
-      - name: Cleanup temporary files
+      - name: Cleanup VPN
         if: always()
         run: |
-          rm -f vpn.ovpn vpn-auth.txt ~/.ssh/id_rsa
+          sudo pkill openvpn || true
+          rm -f vpn.ovpn vpn-auth.txt vpn.log

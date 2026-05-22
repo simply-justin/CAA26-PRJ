@@ -10,3 +10,4 @@ kubeconfig
 __pycache__/
 .pytest_cache/
 .ansible/
+.batfish/

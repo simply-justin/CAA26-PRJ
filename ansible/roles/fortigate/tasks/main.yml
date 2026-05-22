@@ -1,16 +1,52 @@
+---
+- name: Configure FortiGate firewall services
+  fortinet.fortios.fortios_firewall_service_custom:
+    access_token: "{{ fortigate_access_token }}"
+    vdom: "{{ fortigate_vdom }}"
+    state: present
+    firewall_service_custom:
+      name: "{{ item.name }}"
+      protocol: TCP_UDP_SCTP
+      tcp_portrange: "{{ item.destination_port }}"
+  loop: "{{ network_security_stack.firewall_services }}"
+  when:
+    - network_security_stack.firewall_services | length > 0
+    - item.protocol | upper == "TCP"
+
 - name: Configure FortiGate address objects
   fortinet.fortios.fortios_firewall_address:
-    access_token: "{{ lookup('env', 'FORTIGATE_API_TOKEN') }}"
-    vdom: "root"
+    access_token: "{{ fortigate_access_token }}"
+    vdom: "{{ fortigate_vdom }}"
     state: present
     firewall_address:
       name: "ADDR_{{ item.name | upper }}_NET"
-      subnet: "{{ item.subnet | ansible.utils.ipaddr('network') }} {{ item.subnet | ansible.utils.ipaddr('netmask') }}"
       type: ipmask
+      subnet: "{{ item.subnet | ansible.utils.ipaddr('network') }} {{ item.subnet | ansible.utils.ipaddr('netmask') }}"
   loop: "{{ network_security_stack.zones }}"
-  vars:
-    ansible_connection: httpapi
-    ansible_network_os: fortinet.fortios.fortios
-    ansible_httpapi_use_ssl: true
-    ansible_httpapi_validate_certs: false
-  delegate_to: fortigate01
+  when:
+    - item.subnet is defined
+    - not (item.protected | default(false))
+
+- name: Configure FortiGate firewall policies
+  fortinet.fortios.fortios_firewall_policy:
+    access_token: "{{ fortigate_access_token }}"
+    vdom: "{{ fortigate_vdom }}"
+    state: present
+    firewall_policy:
+      name: "{{ item.name }}"
+      srcintf:
+        - name: "{{ item.source_zone }}"
+      dstintf:
+        - name: "{{ item.destination_zone }}"
+      srcaddr:
+        - name: "{{ item.source_address }}"
+      dstaddr:
+        - name: "{{ item.destination_address }}"
+      service:
+        - name: "{{ item.service }}"
+      action: "{{ 'accept' if item.action == 'allow' else 'deny' }}"
+      schedule: always
+      logtraffic: "{{ 'all' if item.log_traffic | default(true) else 'disable' }}"
+      status: enable
+  loop: "{{ network_security_stack.firewall_policies }}"
+  when: network_security_stack.firewall_policies | length > 0

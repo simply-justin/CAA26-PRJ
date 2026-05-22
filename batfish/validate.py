@@ -12,7 +12,7 @@ nodes = bfq.nodeProperties().answer().frame()
 if nodes.empty:
     raise RuntimeError("Batfish validation failed: no nodes found in snapshot")
 
-required_nodes = {"spine01", "leaf01", "fortigate01"}
+required_nodes = {"sleaf01", "sleaf02", "sleaf03"}
 found_nodes = set(nodes["Node"].str.lower())
 
 missing_nodes = required_nodes - found_nodes

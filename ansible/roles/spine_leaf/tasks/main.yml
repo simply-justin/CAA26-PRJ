@@ -1,15 +1,41 @@
-- name: Configure VLANs on Arista EOS
+---
+- name: Configure managed VLANs on Arista EOS
   arista.eos.eos_vlans:
     config:
       - vlan_id: "{{ item.id }}"
         name: "{{ item.name }}"
     state: merged
   loop: "{{ datacenter_network.vlans }}"
-  vars:
-    ansible_connection: httpapi
-    ansible_network_os: arista.eos.eos
-    ansible_httpapi_use_ssl: true
-    ansible_httpapi_validate_certs: false
-    ansible_user: "{{ lookup('env', 'ARISTA_API_USERNAME') }}"
-    ansible_password: "{{ lookup('env', 'ARISTA_API_PASSWORD') }}"
-  delegate_to: leaf01
+  when:
+    - item.managed | default(true)
+    - item.id not in datacenter_network.protected_vlans
+
+- name: Configure VXLAN VLAN to VNI mappings
+  arista.eos.eos_config:
+    parents:
+      - "interface {{ datacenter_network.evpn_vxlan.vxlan_interface }}"
+    lines:
+      - "vxlan vlan {{ item.id }} vni {{ item.vni }}"
+  loop: "{{ datacenter_network.vlans }}"
+  when:
+    - item.managed | default(true)
+    - item.id not in datacenter_network.protected_vlans
+    - item.vni is defined
+
+- name: Configure VLAN-aware bundle VLAN list
+  arista.eos.eos_config:
+    parents:
+      - "router bgp {{ datacenter_network.bgp.asn }}"
+      - "vlan-aware-bundle {{ datacenter_network.vlan_aware_bundle.name }}"
+    lines:
+      - "vlan {{ datacenter_network.vlan_aware_bundle.vlans | join(',') }}"
+
+- name: Ensure EVPN address-family activates SPINES peer group
+  arista.eos.eos_config:
+    parents:
+      - "router bgp {{ datacenter_network.bgp.asn }}"
+      - "address-family evpn"
+    lines:
+      - "neighbor {{ datacenter_network.bgp.spine_peer_group }} activate"
+      - "neighbor {{ datacenter_network.bgp.spine_peer_group }} encapsulation vxlan"
+  when: datacenter_network.bgp.evpn_enabled | default(true)

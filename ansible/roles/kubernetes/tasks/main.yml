@@ -1,4 +1,0 @@
-- name: Validate Kubernetes manifests
-  ansible.builtin.command:
-    cmd: kubectl apply --dry-run=client -f kubernetes/
-  changed_when: false

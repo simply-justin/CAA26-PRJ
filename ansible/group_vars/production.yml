@@ -1,5 +1,5 @@
 ---
-environment_name: test
+environment_name: production
 
 datacenter_network:
   enabled: true

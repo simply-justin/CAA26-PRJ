@@ -1,4 +1,0 @@
-{% for segment in network_segments %}
-address ADDR_{{ segment.name | upper }}_NET
-  subnet {{ segment.subnet }}
-{% endfor %}

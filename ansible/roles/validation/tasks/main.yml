@@ -1,3 +1,4 @@
+---
 - name: Validate VLAN IDs are unique
   ansible.builtin.assert:
     that:
@@ -10,12 +11,35 @@
       - datacenter_network.vlans | map(attribute='name') | list | unique | length == datacenter_network.vlans | length
     fail_msg: "Duplicate VLAN names detected"
 
-- name: Validate all VLANs reference existing VRFs
+- name: Validate protected VLANs are not marked as managed
   ansible.builtin.assert:
     that:
-      - item.vrf in datacenter_network.vrfs | map(attribute='name') | list
-    fail_msg: "VLAN references an unknown VRF"
+      - not (item.managed | default(true))
+    fail_msg: "Protected VLAN {{ item.id }} must not be managed by Ansible"
   loop: "{{ datacenter_network.vlans }}"
+  when: item.id in datacenter_network.protected_vlans
+
+- name: Validate all managed VLANs have a VNI
+  ansible.builtin.assert:
+    that:
+      - item.vni is defined
+    fail_msg: "Managed VLAN {{ item.id }} is missing a VNI"
+  loop: "{{ datacenter_network.vlans }}"
+  when: item.managed | default(true)
+
+- name: Validate VLAN-aware bundle contains all managed VLANs
+  ansible.builtin.assert:
+    that:
+      - item.id in datacenter_network.vlan_aware_bundle.vlans
+    fail_msg: "Managed VLAN {{ item.id }} is missing from vlan-aware-bundle"
+  loop: "{{ datacenter_network.vlans }}"
+  when: item.managed | default(true)
+
+- name: Validate VLAN-aware bundle contains protected VLAN 10
+  ansible.builtin.assert:
+    that:
+      - 10 in datacenter_network.vlan_aware_bundle.vlans
+    fail_msg: "Protected VLAN 10 must remain part of vlan-aware-bundle Main"
 
 - name: Validate firewall policy source zones exist
   ansible.builtin.assert:
@@ -23,6 +47,7 @@
       - item.source_zone in network_security_stack.zones | map(attribute='name') | list
     fail_msg: "Firewall policy references unknown source zone"
   loop: "{{ network_security_stack.firewall_policies }}"
+  when: network_security_stack.firewall_policies | length > 0
 
 - name: Validate firewall policy destination zones exist
   ansible.builtin.assert:
@@ -30,10 +55,4 @@
       - item.destination_zone in network_security_stack.zones | map(attribute='name') | list
     fail_msg: "Firewall policy references unknown destination zone"
   loop: "{{ network_security_stack.firewall_policies }}"
-
-- name: Validate SDN policies reference existing security zones
-  ansible.builtin.assert:
-    that:
-      - item.segment in network_security_stack.zones | map(attribute='name') | list
-    fail_msg: "SDN policy references unknown segment"
-  loop: "{{ iac_sdn.sdn_policies }}"
+  when: network_security_stack.firewall_policies | length > 0

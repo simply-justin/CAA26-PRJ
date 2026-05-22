@@ -1,0 +1,18 @@
+---
+profile: basic
+
+exclude_paths:
+  - .cache/
+  - .ansible/
+  - .batfish/
+  - batfish/
+
+skip_list:
+  - args
+  - schema
+  - var-naming[no-role-prefix]
+  - no-changed-when
+  - command-instead-of-shell
+
+warn_list:
+  - experimental

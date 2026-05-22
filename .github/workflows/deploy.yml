@@ -1,3 +1,4 @@
+---
 name: Deploy Network Automation
 
 on:
@@ -20,24 +21,30 @@ on:
 jobs:
   validate:
     name: Validate configuration
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - network-runner
 
     env:
       TARGET_ENV: ${{ github.event.inputs.environment || 'test' }}
+
+      ARISTA_API_USERNAME: ${{ secrets.ARISTA_API_USERNAME }}
+      ARISTA_API_PASSWORD: ${{ secrets.ARISTA_API_PASSWORD }}
+      ARISTA_SLEAF01_HOST: ${{ secrets.ARISTA_SLEAF01_HOST }}
+      ARISTA_SLEAF02_HOST: ${{ secrets.ARISTA_SLEAF02_HOST }}
+      ARISTA_SLEAF03_HOST: ${{ secrets.ARISTA_SLEAF03_HOST }}
+
+      FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
+      FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
 
       - name: Install Ansible collections
         run: |
@@ -45,7 +52,7 @@ jobs:
 
       - name: Run YAML lint
         run: |
-          yamllint ansible/ .github/workflows/ kubernetes/ sdn/ batfish/
+          yamllint ansible/ .github/workflows/ batfish/
 
       - name: Run Ansible lint
         run: |
@@ -74,10 +81,12 @@ jobs:
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
 
-
   batfish:
     name: Validate network with Batfish
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - network-runner
+
     needs:
       - validate
 
@@ -90,6 +99,8 @@ jobs:
 
       - name: Start Batfish container
         run: |
+          docker rm -f batfish || true
+
           docker run -d \
             --name batfish \
             -p 9997:9997 \
@@ -100,17 +111,19 @@ jobs:
 
       - name: Install Batfish dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pybatfish pandas
+          python3 -m pip install --upgrade pip
+          pip3 install pybatfish pandas
 
       - name: Run Batfish validation
         run: |
-          python batfish/validate.py
-
+          python3 batfish/validate.py
 
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || 'test' }}
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - network-runner
+
     needs:
       - validate
       - batfish
@@ -123,10 +136,12 @@ jobs:
 
       ARISTA_API_USERNAME: ${{ secrets.ARISTA_API_USERNAME }}
       ARISTA_API_PASSWORD: ${{ secrets.ARISTA_API_PASSWORD }}
-      FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
+      ARISTA_SLEAF01_HOST: ${{ secrets.ARISTA_SLEAF01_HOST }}
+      ARISTA_SLEAF02_HOST: ${{ secrets.ARISTA_SLEAF02_HOST }}
+      ARISTA_SLEAF03_HOST: ${{ secrets.ARISTA_SLEAF03_HOST }}
 
-      SDN_CONTROLLER_URL: ${{ secrets.SDN_CONTROLLER_URL }}
-      SDN_CONTROLLER_TOKEN: ${{ secrets.SDN_CONTROLLER_TOKEN }}
+      FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
+      FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -139,26 +154,21 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+
+      - name: Activate runner Python environment
+        run: |
+          echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
 
       - name: Install Ansible collections
         run: |
           ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/stable.txt"
-          KUBECTL_VERSION=$(cat stable.txt)
-
-          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
-
       - name: Write VPN configuration
         run: |
           cat > vpn.ovpn <<'EOF'
-          ${{ secrets.VPN_CONFIG }}
+          ${{ secrets.VPN_PROFILE }}
           EOF
 
           cat > vpn-auth.txt <<'EOF'
@@ -182,26 +192,15 @@ jobs:
         run: |
           ip route
 
-      - name: Test Arista API reachability
-        if: ${{ secrets.ARISTA_LEAF01_HOST != '' }}
+      - name: Test Arista reachability
         run: |
-          ping -c 3 "${{ secrets.ARISTA_LEAF01_HOST }}" || true
+          ping -c 3 "${ARISTA_SLEAF01_HOST}" || true
+          ping -c 3 "${ARISTA_SLEAF02_HOST}" || true
+          ping -c 3 "${ARISTA_SLEAF03_HOST}" || true
 
-      - name: Test FortiGate API reachability
-        if: ${{ secrets.FORTIGATE_HOST != '' }}
+      - name: Test FortiGate reachability
         run: |
-          ping -c 3 "${{ secrets.FORTIGATE_HOST }}" || true
-
-      - name: Prepare kubeconfig
-        if: ${{ secrets.KUBECONFIG != '' }}
-        run: |
-          mkdir -p ~/.kube
-
-          cat > ~/.kube/config <<'EOF'
-          ${{ secrets.KUBECONFIG }}
-          EOF
-
-          chmod 600 ~/.kube/config
+          ping -c 3 "${FORTIGATE_HOST}" || true
 
       - name: Run deployment dry-run
         run: |
@@ -210,30 +209,21 @@ jobs:
             -e "target_environment=${TARGET_ENV}" \
             --check \
             --diff
-        env:
-          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
-          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
       - name: Deploy configuration
         run: |
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
-        env:
-          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
-          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
       - name: Verify deployment
         run: |
           ansible-playbook ansible/playbooks/verify.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
-        env:
-          ARISTA_LEAF01_HOST: ${{ secrets.ARISTA_LEAF01_HOST }}
-          FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
 
-      - name: Cleanup temporary files
+      - name: Cleanup VPN
         if: always()
         run: |
-          rm -f vpn.ovpn vpn-auth.txt
-          rm -f ~/.kube/config
+          sudo pkill openvpn || true
+          rm -f vpn.ovpn vpn-auth.txt vpn.log

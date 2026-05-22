@@ -1,41 +1,80 @@
-- name: Verify network automation deployment
-  hosts: automation_targets
+---
+- name: Verify Arista EVPN/VXLAN service leaf configuration
+  hosts: service_leafs
   gather_facts: false
+  connection: httpapi
 
   vars_files:
     - "../group_vars/all.yml"
     - "../group_vars/{{ target_environment | default('test') }}.yml"
 
   tasks:
-    - name: Check spine-leaf VLAN configuration
-      ansible.builtin.stat:
-        path: "{{ configuration_root }}/spine-leaf/vlans.cfg"
-      register: spine_leaf_config
+    - name: Gather Arista VLAN information
+      arista.eos.eos_command:
+        commands:
+          - show vlan brief
+      register: arista_vlan_output
 
-    - name: Validate spine-leaf VLAN configuration exists
+    - name: Validate expected managed VLANs exist on Arista
       ansible.builtin.assert:
         that:
-          - spine_leaf_config.stat.exists
-        fail_msg: "Spine-leaf VLAN configuration file is missing"
+          - item.id | string in arista_vlan_output.stdout[0]
+        fail_msg: "Expected VLAN {{ item.id }} is missing on {{ inventory_hostname }}"
+      loop: "{{ datacenter_network.vlans }}"
+      when: item.managed | default(true)
 
-    - name: Check FortiGate address objects
-      ansible.builtin.stat:
-        path: "{{ configuration_root }}/fortigate/address-objects.cfg"
-      register: fortigate_address_objects
+    - name: Gather Arista VXLAN running configuration
+      arista.eos.eos_command:
+        commands:
+          - show running-config interfaces Vxlan1
+      register: arista_vxlan_output
 
-    - name: Validate FortiGate address objects exist
+    - name: Validate expected VXLAN mappings exist
       ansible.builtin.assert:
         that:
-          - fortigate_address_objects.stat.exists
-        fail_msg: "FortiGate address objects file is missing"
+          - "'vxlan vlan ' ~ (item.id | string) ~ ' vni ' ~ (item.vni | string) in arista_vxlan_output.stdout[0]"
+        fail_msg: "Expected VXLAN mapping for VLAN {{ item.id }} VNI {{ item.vni }} is missing on {{ inventory_hostname }}"
+      loop: "{{ datacenter_network.vlans }}"
+      when:
+        - item.managed | default(true)
+        - item.vni is defined
 
-    - name: Check FortiGate firewall policies
-      ansible.builtin.stat:
-        path: "{{ configuration_root }}/fortigate/firewall-policies.cfg"
-      register: fortigate_firewall_policies
+    - name: Gather Arista BGP running configuration
+      arista.eos.eos_command:
+        commands:
+          - show running-config section router bgp
+      register: arista_bgp_output
 
-    - name: Validate FortiGate firewall policies exist
+    - name: Validate vlan-aware bundle exists
       ansible.builtin.assert:
         that:
-          - fortigate_firewall_policies.stat.exists
-        fail_msg: "FortiGate firewall policies file is missing"
+          - "'vlan-aware-bundle ' ~ datacenter_network.vlan_aware_bundle.name in arista_bgp_output.stdout[0]"
+        fail_msg: "Expected vlan-aware-bundle {{ datacenter_network.vlan_aware_bundle.name }} is missing on {{ inventory_hostname }}"
+
+
+- name: Verify FortiGate configuration
+  hosts: fortigate
+  gather_facts: false
+  connection: httpapi
+
+  vars_files:
+    - "../group_vars/all.yml"
+    - "../group_vars/{{ target_environment | default('test') }}.yml"
+
+  vars:
+    fortigate_access_token: "{{ lookup('env', 'FORTIGATE_API_TOKEN') }}"
+    fortigate_vdom: "{{ network_security_stack.fortigate.vdom | default('root') }}"
+
+  tasks:
+    - name: Get FortiGate address objects
+      fortinet.fortios.fortios_monitor_fact:
+        access_token: "{{ fortigate_access_token }}"
+        vdom: "{{ fortigate_vdom }}"
+        selector: firewall_address
+      register: fortigate_addresses
+
+    - name: Validate FortiGate address facts were returned
+      ansible.builtin.assert:
+        that:
+          - fortigate_addresses is defined
+        fail_msg: "Could not retrieve FortiGate address objects"
