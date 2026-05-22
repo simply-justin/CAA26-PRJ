@@ -44,7 +44,7 @@ variabelen met `lookup('env', ...)`.
 - In `.github/workflows/deploy.yml` en `.github/workflows/rollback.yml`
   worden de Arista- en FortiGate-secrets in de job-`env` geïnjecteerd
   als omgevingsvariabelen met dezelfde naam.
-- `VPN_PROFILE` wordt via heredoc naar `vpn.ovpn` geschreven,
+- `VPN_PROFILE` wordt vanuit de workflow-omgeving naar `vpn.ovpn` geschreven,
   `VPN_USERNAME`/`VPN_PASSWORD` worden samen naar `vpn-auth.txt`
   geschreven. Beide bestanden krijgen mode `600`, en worden in de
   laatste stap (`if: always()`) opgeruimd. `.gitignore` voorkomt dat

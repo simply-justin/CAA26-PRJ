@@ -151,6 +151,9 @@ jobs:
       FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
       FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
       SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+      VPN_PROFILE: ${{ secrets.VPN_PROFILE }}
+      VPN_USERNAME: ${{ secrets.VPN_USERNAME }}
+      VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
 
     steps:
       - name: Checkout repository
@@ -196,14 +199,8 @@ jobs:
 
       - name: Write VPN configuration
         run: |
-          cat > vpn.ovpn <<'EOF'
-          ${{ secrets.VPN_PROFILE }}
-          EOF
-
-          cat > vpn-auth.txt <<'EOF'
-          ${{ secrets.VPN_USERNAME }}
-          ${{ secrets.VPN_PASSWORD }}
-          EOF
+          printf '%s\n' "$VPN_PROFILE" > vpn.ovpn
+          printf '%s\n%s\n' "$VPN_USERNAME" "$VPN_PASSWORD" > vpn-auth.txt
 
           python3 - <<'PY'
           from pathlib import Path
@@ -263,7 +260,12 @@ jobs:
 
           require_directive "remote" "VPN_PROFILE must include a remote directive, for example: remote vpn.example.com 1194"
           require_any_directive "VPN_PROFILE should include client or tls-client" "client" "tls-client"
-          require_any_directive "VPN_PROFILE should include proto udp or proto tcp-client" "proto"
+
+          if ! grep -Eq "^[[:space:]]*proto([[:space:]]|$)" vpn.ovpn \
+            && ! grep -Eq "^[[:space:]]*remote[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+[[:space:]]+(udp|udp4|udp6|tcp|tcp4|tcp6|tcp-client)([[:space:]]|$)" vpn.ovpn; then
+            echo "::error::VPN_PROFILE should include proto udp/tcp-client or a remote directive with protocol, for example: remote vpn.example.com 1194 udp4"
+            missing=1
+          fi
 
           if grep -Eq "^[[:space:]]*nobind([[:space:]]|$)" vpn.ovpn && ! grep -Eq "^[[:space:]]*remote([[:space:]]|$)" vpn.ovpn; then
             echo "::error::VPN_PROFILE contains nobind, but no remote directive"
