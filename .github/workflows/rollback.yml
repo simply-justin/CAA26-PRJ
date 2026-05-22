@@ -154,6 +154,7 @@ jobs:
           printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' openvpn \
             --config vpn.ovpn \
             --dev tun \
+            --pull \
             --auth-user-pass vpn-auth.txt \
             --daemon \
             --log vpn.log \
