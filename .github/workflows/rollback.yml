@@ -179,6 +179,7 @@ jobs:
           check_device() {
             name="$1"
             host="$2"
+            target="$host"
 
             if [ -z "$host" ]; then
               echo "::error::$name host secret is empty"
@@ -186,8 +187,17 @@ jobs:
               return
             fi
 
+            if ! printf '%s' "$host" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+              target="$(getent hosts "$host" | awk '{print $1; exit}')"
+              if [ -z "$target" ]; then
+                echo "::error::$name host '$host' cannot be resolved"
+                failures=1
+                return
+              fi
+            fi
+
             echo "Checking $name API reachability"
-            ip route get "$host" || true
+            ip route get "$target" || true
 
             if ! curl --insecure --silent --show-error --connect-timeout 10 --max-time 15 --output /dev/null "https://${host}:443/"; then
               echo "::error::$name is not reachable on HTTPS/443 after VPN connection"
