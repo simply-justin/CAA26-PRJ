@@ -290,21 +290,73 @@ jobs:
             exit 1
           fi
 
-      - name: Run deployment dry-run
+      - name: Create deployment change preview
+        id: deployment_preview
         run: |
+          mkdir -p deployment-previews
+          PREVIEW_FILE="deployment-previews/${TARGET_ENV}-deployment-preview.txt"
+
+          {
+            echo "Deployment preview"
+            echo "Environment: ${TARGET_ENV}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo
+          } > "$PREVIEW_FILE"
+
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}" \
             --check \
-            --diff
+            --diff 2>&1 | tee -a "$PREVIEW_FILE"
+
+          status="${PIPESTATUS[0]}"
+          echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload deployment change preview
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.TARGET_ENV }}-deployment-preview
+          path: deployment-previews/${{ env.TARGET_ENV }}-deployment-preview.txt
+          if-no-files-found: error
+
+      - name: Add deployment preview to summary
+        if: always()
+        run: |
+          PREVIEW_FILE="deployment-previews/${TARGET_ENV}-deployment-preview.txt"
+
+          {
+            echo "## Deployment Preview (${TARGET_ENV})"
+            echo
+            echo "Download the full text file from the workflow artifact:"
+            echo "\`${TARGET_ENV}-deployment-preview\`"
+            echo
+            echo "<details><summary>Preview output</summary>"
+            echo
+            echo '```text'
+            sed -n '1,300p' "$PREVIEW_FILE"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when deployment preview fails
+        if: steps.deployment_preview.outputs.exit_code != '0'
+        run: |
+          echo "::error::Deployment preview failed. Review the uploaded ${TARGET_ENV}-deployment-preview artifact."
+          exit 1
 
       - name: Deploy configuration
+        if: env.TARGET_ENV != 'test'
         run: |
           ansible-playbook ansible/playbooks/deploy.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
             -e "target_environment=${TARGET_ENV}"
 
       - name: Verify deployment
+        if: env.TARGET_ENV != 'test'
         run: |
           ansible-playbook ansible/playbooks/verify.yml \
             -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \

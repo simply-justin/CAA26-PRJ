@@ -29,8 +29,10 @@ environment.
   apparaattoegang draaien. Maakt **geen** VPN-verbinding.
 - `deploy.yml` (push naar `main` of handmatig): standaard `test`,
   via `workflow_dispatch` kan een reviewer `acceptance` of
-  `production` kiezen. Bouwt eerst een OpenVPN-verbinding op en sluit
-  die aan het einde van de job weer af.
+  `production` kiezen. Bouwt eerst een OpenVPN-verbinding op, maakt een
+  tekstuele change preview en sluit die aan het einde van de job weer af.
+  Voor `test` wordt alleen de preview gemaakt; apply en verify draaien
+  pas voor `acceptance` en `production`.
 - `rollback.yml` (handmatig): vereist environment, git ref en reden.
   Bouwt ook eerst een OpenVPN-verbinding op.
 

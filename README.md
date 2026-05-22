@@ -111,7 +111,9 @@ goedkeuring via de GitHub Environment-protectie.
   VPN-verbinding (offline validatie).
 - `.github/workflows/deploy.yml` – draait op push naar `main` en via
   `workflow_dispatch`. Voert validatie, Batfish-validatie, opent een
-  OpenVPN-verbinding, en draait dry-run, deployment en verify.
+  OpenVPN-verbinding, en maakt een tekstuele change preview. Voor `test`
+  stopt de workflow na die preview; voor `acceptance` en `production`
+  volgen deployment en verify.
 - `.github/workflows/rollback.yml` – handmatig via `workflow_dispatch`,
   rolt terug naar een opgegeven git ref. Maakt eerst een OpenVPN-
   verbinding voordat de configuratie wordt teruggezet. Zie

@@ -62,11 +62,12 @@ voert uit (zonder VPN):
    - Schrijft `vpn.ovpn` en `vpn-auth.txt` (mode 600) op basis van
      `VPN_PROFILE`, `VPN_USERNAME`, `VPN_PASSWORD`.
    - Start OpenVPN in daemon-mode en wacht 20 seconden op routes.
-   - Bereikbaarheidstest (`ping`) naar de Arista-leafs en de FortiGate
-     - faalt nooit hard, alleen informatief.
-   - Dry-run met `--check --diff`.
-   - Apply via `ansible/playbooks/deploy.yml`.
-   - Verify via `ansible/playbooks/verify.yml`.
+   - Controleert API-bereikbaarheid naar de Arista-leafs en de FortiGate.
+   - Maakt een tekstuele change preview met `--check --diff` en uploadt
+     die als workflow-artifact (`<environment>-deployment-preview`).
+   - Voor `test`: stopt na de preview zodat de changes eerst beoordeeld
+     kunnen worden.
+   - Voor `acceptance` en `production`: voert daarna apply en verify uit.
    - Cleanup-stap (`if: always()`) sluit OpenVPN en verwijdert de
      credential-bestanden.
 
