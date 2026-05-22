@@ -217,6 +217,47 @@ jobs:
 
           chmod 600 vpn.ovpn vpn-auth.txt
 
+      - name: Validate VPN configuration
+        run: |
+          missing=0
+
+          require_directive() {
+            directive="$1"
+            message="$2"
+
+            if ! grep -Eq "^[[:space:]]*${directive}([[:space:]]|$)" vpn.ovpn; then
+              echo "::error::$message"
+              missing=1
+            fi
+          }
+
+          require_any_directive() {
+            message="$1"
+            shift
+
+            for directive in "$@"; do
+              if grep -Eq "^[[:space:]]*${directive}([[:space:]]|$)" vpn.ovpn; then
+                return 0
+              fi
+            done
+
+            echo "::error::$message"
+            missing=1
+          }
+
+          require_directive "remote" "VPN_PROFILE must include a remote directive, for example: remote vpn.example.com 1194"
+          require_any_directive "VPN_PROFILE should include client or tls-client" "client" "tls-client"
+          require_any_directive "VPN_PROFILE should include proto udp or proto tcp-client" "proto"
+
+          if grep -Eq "^[[:space:]]*nobind([[:space:]]|$)" vpn.ovpn && ! grep -Eq "^[[:space:]]*remote([[:space:]]|$)" vpn.ovpn; then
+            echo "::error::VPN_PROFILE contains nobind, but no remote directive"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Connect to VPN
         run: |
           print_vpn_log() {
