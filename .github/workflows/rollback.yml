@@ -172,6 +172,38 @@ jobs:
         run: |
           ip route
 
+      - name: Test device API reachability
+        run: |
+          failures=0
+
+          check_device() {
+            name="$1"
+            host="$2"
+
+            if [ -z "$host" ]; then
+              echo "::error::$name host secret is empty"
+              failures=1
+              return
+            fi
+
+            echo "Checking $name API reachability"
+            ip route get "$host" || true
+
+            if ! curl --insecure --silent --show-error --connect-timeout 10 --max-time 15 --output /dev/null "https://${host}:443/"; then
+              echo "::error::$name is not reachable on HTTPS/443 after VPN connection"
+              failures=1
+            fi
+          }
+
+          check_device "SLEAF01" "$ARISTA_SLEAF01_HOST"
+          check_device "SLEAF02" "$ARISTA_SLEAF02_HOST"
+          check_device "SLEAF03" "$ARISTA_SLEAF03_HOST"
+          check_device "FortiGate" "$FORTIGATE_HOST"
+
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Rollback dry-run
         run: |
           ansible-playbook ansible/playbooks/deploy.yml \
