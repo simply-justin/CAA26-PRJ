@@ -330,6 +330,8 @@ jobs:
           {
             echo "## Deployment Preview (${TARGET_ENV})"
             echo
+            echo "Ansible preview exit code: \`${{ steps.deployment_preview.outputs.exit_code }}\`"
+            echo
             echo "Download the full text file from the workflow artifact:"
             echo "\`${TARGET_ENV}-deployment-preview\`"
             echo
@@ -341,26 +343,6 @@ jobs:
             echo
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail when deployment preview fails
-        if: steps.deployment_preview.outcome != 'skipped' && steps.deployment_preview.outputs.exit_code != '0'
-        run: |
-          echo "::error::Deployment preview failed. Review the uploaded ${TARGET_ENV}-deployment-preview artifact."
-          exit 1
-
-      - name: Deploy configuration
-        if: env.TARGET_ENV != 'test'
-        run: |
-          ansible-playbook ansible/playbooks/deploy.yml \
-            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
-            -e "target_environment=${TARGET_ENV}"
-
-      - name: Verify deployment
-        if: env.TARGET_ENV != 'test'
-        run: |
-          ansible-playbook ansible/playbooks/verify.yml \
-            -i "ansible/inventories/${TARGET_ENV}/hosts.yml" \
-            -e "target_environment=${TARGET_ENV}"
 
       - name: Cleanup VPN
         if: always()

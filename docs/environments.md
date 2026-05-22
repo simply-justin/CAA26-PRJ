@@ -31,8 +31,8 @@ environment.
   via `workflow_dispatch` kan een reviewer `acceptance` of
   `production` kiezen. Bouwt eerst een OpenVPN-verbinding op, maakt een
   tekstuele change preview en sluit die aan het einde van de job weer af.
-  Voor `test` wordt alleen de preview gemaakt; apply en verify draaien
-  pas voor `acceptance` en `production`.
+  De workflow past geen configuratie toe; hij logt alleen welke wijzigingen
+  Ansible met `--check --diff` zou maken.
 - `rollback.yml` (handmatig): vereist environment, git ref en reden.
   Bouwt ook eerst een OpenVPN-verbinding op.
 

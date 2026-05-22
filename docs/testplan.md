@@ -65,9 +65,8 @@ voert uit (zonder VPN):
    - Controleert API-bereikbaarheid naar de Arista-leafs en de FortiGate.
    - Maakt een tekstuele change preview met `--check --diff` en uploadt
      die als workflow-artifact (`<environment>-deployment-preview`).
-   - Voor `test`: stopt na de preview zodat de changes eerst beoordeeld
-     kunnen worden.
-   - Voor `acceptance` en `production`: voert daarna apply en verify uit.
+   - Past geen configuratie toe; de workflow logt alleen welke wijzigingen
+     Ansible zou maken.
    - Cleanup-stap (`if: always()`) sluit OpenVPN en verwijdert de
      credential-bestanden.
 
