@@ -129,6 +129,16 @@ jobs:
           ${{ secrets.VPN_PASSWORD }}
           EOF
 
+          python3 - <<'PY'
+          from pathlib import Path
+
+          profile = Path("vpn.ovpn")
+          text = profile.read_text()
+
+          if "\\n" in text and "\n" not in text.replace("\\n", ""):
+              profile.write_text(text.replace("\\n", "\n"))
+          PY
+
           if [ ! -s vpn.ovpn ]; then
             echo "::error::VPN_PROFILE secret is empty"
             exit 1
@@ -144,6 +154,12 @@ jobs:
       - name: Validate VPN configuration
         run: |
           missing=0
+
+          echo "VPN profile line count: $(wc -l < vpn.ovpn)"
+          echo "VPN profile directives:"
+          grep -E '^[[:space:]]*(client|tls-client|dev|proto|remote|nobind|auth-user-pass|remote-cert-tls|data-ciphers)([[:space:]]|$)' vpn.ovpn \
+            | sed -E 's/^remote[[:space:]]+[^[:space:]]+/remote <redacted-host>/' \
+            || true
 
           require_directive() {
             directive="$1"
