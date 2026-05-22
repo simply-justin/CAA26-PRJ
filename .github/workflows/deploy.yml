@@ -275,8 +275,8 @@ jobs:
             echo "Checking $name API reachability"
             ip route get "$target" || true
 
-            if ! curl --insecure --silent --show-error --connect-timeout 10 --max-time 15 --output /dev/null "https://${host}:443/"; then
-              echo "::error::$name is not reachable on HTTPS/443 after VPN connection"
+            if ! timeout 10 bash -c "true < /dev/tcp/${host}/443"; then
+              echo "::error::$name is not reachable on TCP/443 after VPN connection"
               failures=1
             fi
           }
@@ -315,7 +315,7 @@ jobs:
           exit 0
 
       - name: Upload deployment change preview
-        if: always()
+        if: always() && steps.deployment_preview.outcome != 'skipped'
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.TARGET_ENV }}-deployment-preview
@@ -323,7 +323,7 @@ jobs:
           if-no-files-found: error
 
       - name: Add deployment preview to summary
-        if: always()
+        if: always() && steps.deployment_preview.outcome != 'skipped'
         run: |
           PREVIEW_FILE="deployment-previews/${TARGET_ENV}-deployment-preview.txt"
 
@@ -343,7 +343,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail when deployment preview fails
-        if: steps.deployment_preview.outputs.exit_code != '0'
+        if: steps.deployment_preview.outcome != 'skipped' && steps.deployment_preview.outputs.exit_code != '0'
         run: |
           echo "::error::Deployment preview failed. Review the uploaded ${TARGET_ENV}-deployment-preview artifact."
           exit 1

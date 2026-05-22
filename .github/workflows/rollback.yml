@@ -199,8 +199,8 @@ jobs:
             echo "Checking $name API reachability"
             ip route get "$target" || true
 
-            if ! curl --insecure --silent --show-error --connect-timeout 10 --max-time 15 --output /dev/null "https://${host}:443/"; then
-              echo "::error::$name is not reachable on HTTPS/443 after VPN connection"
+            if ! timeout 10 bash -c "true < /dev/tcp/${host}/443"; then
+              echo "::error::$name is not reachable on TCP/443 after VPN connection"
               failures=1
             fi
           }
