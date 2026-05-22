@@ -36,6 +36,7 @@ jobs:
 
       FORTIGATE_HOST: ${{ secrets.FORTIGATE_HOST }}
       FORTIGATE_API_TOKEN: ${{ secrets.FORTIGATE_API_TOKEN }}
+      SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
     steps:
       - name: Checkout repository
@@ -155,10 +156,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Verify sudo credentials
+        run: |
+          if [ -z "$SUDO_PASSWORD" ]; then
+            echo "::error::SUDO_PASSWORD secret is empty"
+            exit 1
+          fi
+
+          printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' true || {
+            echo "::error::SUDO_PASSWORD secret is invalid or sudo access is not allowed"
+            exit 1
+          }
+
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y openvpn iproute2 iputils-ping curl
+          printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' apt-get update
+          printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' apt-get install -y openvpn iproute2 iputils-ping curl
 
       - name: Activate runner Python environment
         run: |
@@ -201,12 +214,12 @@ jobs:
           print_vpn_log() {
             if [ -f vpn.log ]; then
               echo "::group::OpenVPN log"
-              sudo sed -n '1,200p' vpn.log
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' sed -n '1,200p' vpn.log
               echo "::endgroup::"
             fi
           }
 
-          sudo openvpn \
+          printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' openvpn \
             --config vpn.ovpn \
             --auth-user-pass vpn-auth.txt \
             --daemon \
@@ -219,8 +232,8 @@ jobs:
 
           sleep 20
 
-          VPN_PID="$(sudo sed -n '1p' openvpn.pid 2>/dev/null || true)"
-          if [ -z "$VPN_PID" ] || ! sudo kill -0 "$VPN_PID" 2>/dev/null; then
+          VPN_PID="$(printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' sed -n '1p' openvpn.pid 2>/dev/null || true)"
+          if [ -z "$VPN_PID" ] || ! printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' kill -0 "$VPN_PID" 2>/dev/null; then
             echo "::error::OpenVPN stopped during startup"
             print_vpn_log
             exit 1
@@ -263,5 +276,5 @@ jobs:
       - name: Cleanup VPN
         if: always()
         run: |
-          sudo pkill openvpn || true
+          printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' pkill openvpn || true
           rm -f vpn.ovpn vpn-auth.txt vpn.log openvpn.pid
