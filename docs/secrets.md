@@ -14,6 +14,8 @@ variabelen met `lookup('env', ...)`.
 |                         | beheersegment bereikt                                         |
 | `VPN_USERNAME`          | OpenVPN gebruikersnaam                                       |
 | `VPN_PASSWORD`          | OpenVPN wachtwoord                                           |
+| `SUDO_PASSWORD`         | Sudo-wachtwoord van de self-hosted runner user voor          |
+|                         | installatie van packages en het starten van OpenVPN          |
 | `ARISTA_API_USERNAME`   | Gebruiker voor Arista eAPI (HTTPS), bv. `admin`              |
 | `ARISTA_API_PASSWORD`   | Wachtwoord voor Arista eAPI                                  |
 | `ARISTA_SLEAF01_HOST`   | IP of FQDN van SLEAF01 (echt: 172.19.1.4)                    |
@@ -32,6 +34,10 @@ variabelen met `lookup('env', ...)`.
   in Git.
 - `FORTIGATE_HOST` en `FORTIGATE_API_TOKEN` – uitsluitend als GitHub
   Secret, niet in Git.
+- `SUDO_PASSWORD` – sudo-wachtwoord van de runner user, uitsluitend als
+  GitHub Secret. Als secrets per GitHub Environment worden beheerd, voeg
+  dit secret toe aan elke environment waarop deployment of rollback draait
+  (`test`, `acceptance`, `production`).
 
 ## Hoe ze worden gebruikt
 
@@ -43,6 +49,8 @@ variabelen met `lookup('env', ...)`.
   geschreven. Beide bestanden krijgen mode `600`, en worden in de
   laatste stap (`if: always()`) opgeruimd. `.gitignore` voorkomt dat
   ze ooit gecommit worden.
+- `SUDO_PASSWORD` wordt via stdin aan `sudo -S` doorgegeven voor de
+  package-installatie, OpenVPN-start, OpenVPN-logcontrole en cleanup.
 - De Ansible-inventory (`ansible/inventories/<env>/hosts.yml`) leest die
   omgevingsvariabelen voor `ansible_user`, `ansible_password`,
   `ansible_host` en `FORTIGATE_API_TOKEN`.
