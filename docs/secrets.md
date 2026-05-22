@@ -39,6 +39,20 @@ variabelen met `lookup('env', ...)`.
   dit secret toe aan elke environment waarop deployment of rollback draait
   (`test`, `acceptance`, `production`).
 
+Voor `VPN_PROFILE` moet het volledige `.ovpn` bestand met echte newlines
+worden opgeslagen. De veiligste manier zonder base64 is via de GitHub CLI:
+
+```bash
+gh secret set VPN_PROFILE --env test < client.ovpn
+gh secret set VPN_PROFILE --env acceptance < client.ovpn
+gh secret set VPN_PROFILE --env production < client.ovpn
+```
+
+Gebruik je de GitHub webinterface, open dan het `.ovpn` bestand in een editor,
+selecteer de volledige inhoud en plak die rechtstreeks in de secret-waarde. De
+regelafbrekingen moeten behouden blijven; plak het profiel niet als één lange
+regel.
+
 ## Hoe ze worden gebruikt
 
 - In `.github/workflows/deploy.yml` en `.github/workflows/rollback.yml`

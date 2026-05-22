@@ -202,16 +202,6 @@ jobs:
           printf '%s\n' "$VPN_PROFILE" > vpn.ovpn
           printf '%s\n%s\n' "$VPN_USERNAME" "$VPN_PASSWORD" > vpn-auth.txt
 
-          python3 - <<'PY'
-          from pathlib import Path
-
-          profile = Path("vpn.ovpn")
-          text = profile.read_text()
-
-          if "\\n" in text and text.count("\n") <= 1:
-              profile.write_text(text.replace("\\n", "\n"))
-          PY
-
           if [ ! -s vpn.ovpn ]; then
             echo "::error::VPN_PROFILE secret is empty"
             exit 1
@@ -223,58 +213,6 @@ jobs:
           fi
 
           chmod 600 vpn.ovpn vpn-auth.txt
-
-      - name: Validate VPN configuration
-        run: |
-          missing=0
-
-          echo "VPN profile line count: $(wc -l < vpn.ovpn)"
-          echo "VPN profile directives:"
-          grep -E '^[[:space:]]*(client|tls-client|dev|proto|remote|nobind|auth-user-pass|remote-cert-tls|data-ciphers)([[:space:]]|$)' vpn.ovpn \
-            | sed -E 's/^remote[[:space:]]+[^[:space:]]+/remote <redacted-host>/' \
-            || true
-
-          require_directive() {
-            directive="$1"
-            message="$2"
-
-            if ! grep -Eq "^[[:space:]]*${directive}([[:space:]]|$)" vpn.ovpn; then
-              echo "::error::$message"
-              missing=1
-            fi
-          }
-
-          require_any_directive() {
-            message="$1"
-            shift
-
-            for directive in "$@"; do
-              if grep -Eq "^[[:space:]]*${directive}([[:space:]]|$)" vpn.ovpn; then
-                return 0
-              fi
-            done
-
-            echo "::error::$message"
-            missing=1
-          }
-
-          require_directive "remote" "VPN_PROFILE must include a remote directive, for example: remote vpn.example.com 1194"
-          require_any_directive "VPN_PROFILE should include client or tls-client" "client" "tls-client"
-
-          if ! grep -Eq "^[[:space:]]*proto([[:space:]]|$)" vpn.ovpn \
-            && ! grep -Eq "^[[:space:]]*remote[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+[[:space:]]+(udp|udp4|udp6|tcp|tcp4|tcp6|tcp-client)([[:space:]]|$)" vpn.ovpn; then
-            echo "::error::VPN_PROFILE should include proto udp/tcp-client or a remote directive with protocol, for example: remote vpn.example.com 1194 udp4"
-            missing=1
-          fi
-
-          if grep -Eq "^[[:space:]]*nobind([[:space:]]|$)" vpn.ovpn && ! grep -Eq "^[[:space:]]*remote([[:space:]]|$)" vpn.ovpn; then
-            echo "::error::VPN_PROFILE contains nobind, but no remote directive"
-            missing=1
-          fi
-
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
 
       - name: Connect to VPN
         run: |
@@ -288,8 +226,6 @@ jobs:
 
           printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' openvpn \
             --config vpn.ovpn \
-            --dev tun \
-            --pull \
             --auth-user-pass vpn-auth.txt \
             --daemon \
             --log vpn.log \
