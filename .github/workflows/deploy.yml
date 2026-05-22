@@ -116,7 +116,7 @@ jobs:
       - name: Activate runner Python environment
         run: |
           echo "$HOME/runner-venv/bin" >> $GITHUB_PATH
-          
+
       - name: Install Batfish dependencies
         run: |
           python3 -m pip install --upgrade pip
